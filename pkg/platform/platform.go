@@ -13,17 +13,9 @@ type Discoverer interface {
 //go:generate go run github.com/golang/mock/mockgen -destination=mock/platform_mock.go -package=mock github.com/kits-io/go-podman-usbip/pkg/platform Discoverer
 
 // DiscoverDevices discovers USB devices on the current platform.
-// This function is implemented by platform-specific files.
+// Platform-specific implementations are in platform_*.go files.
 func DiscoverDevices() ([]*device.Device, error) {
-	// The actual implementation is in platform-specific files (darwin.go, linux.go, etc.)
+	// This function is implemented by platform-specific files (platform_darwin.go, platform_linux.go, etc.)
 	// which use build tags to only compile on their respective platforms.
-	return discoverDevicesImpl()
-}
-
-// discoverDevicesImpl is the platform-specific implementation.
-// Each platform (darwin, linux, etc.) provides its own implementation.
-func discoverDevicesImpl() ([]*device.Device, error) {
-	// This function should be overridden by platform-specific files
-	// If we reach here, it means no platform-specific implementation was found
-	panic("discoverDevicesImpl: no platform-specific implementation found")
+	return discoverDevices()
 }
