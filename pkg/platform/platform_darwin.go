@@ -16,7 +16,7 @@ func discoverDevices() ([]*device.Device, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize libusb: %w", err)
 	}
-	defer ctx.Exit()
+	// Don't call ctx.Exit() here - the context is shared globally
 
 	// Get device list
 	libusbDevs, err := ctx.GetDeviceList()

@@ -343,3 +343,57 @@ func ParseBusID(busID string) (uint32, uint32, error) {
 	}
 	return busNum, devNum, nil
 }
+
+// URBHeader represents the basic USB/IP URB header (usbip_header_basic).
+type URBHeader struct {
+	Command   uint32
+	SeqNum    uint32
+	Devid     uint32
+	Direction uint32
+	Endpoint  uint32
+}
+
+// ReadURBHeader reads a URB header from the connection.
+func ReadURBHeader(r io.Reader) (*URBHeader, error) {
+	var hdr URBHeader
+	if err := binary.Read(r, binary.BigEndian, &hdr.Command); err != nil {
+		return nil, err
+	}
+	if err := binary.Read(r, binary.BigEndian, &hdr.SeqNum); err != nil {
+		return nil, err
+	}
+	if err := binary.Read(r, binary.BigEndian, &hdr.Devid); err != nil {
+		return nil, err
+	}
+	if err := binary.Read(r, binary.BigEndian, &hdr.Direction); err != nil {
+		return nil, err
+	}
+	if err := binary.Read(r, binary.BigEndian, &hdr.Endpoint); err != nil {
+		return nil, err
+	}
+	return &hdr, nil
+}
+
+// WriteURBHeader writes a URB header to the connection.
+func WriteURBHeader(w io.Writer, hdr *URBHeader) error {
+	fields := []interface{}{
+		hdr.Command,
+		hdr.SeqNum,
+		hdr.Devid,
+		hdr.Direction,
+		hdr.Endpoint,
+	}
+	for _, f := range fields {
+		if err := binary.Write(w, binary.BigEndian, f); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// ReadUint32 reads a uint32 from the reader in big-endian format.
+func ReadUint32(r io.Reader) (uint32, error) {
+	var v uint32
+	err := binary.Read(r, binary.BigEndian, &v)
+	return v, err
+}

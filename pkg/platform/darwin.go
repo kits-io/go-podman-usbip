@@ -15,6 +15,8 @@ import (
 	"fmt"
 	"sync"
 	"unsafe"
+
+	"github.com/kits-io/go-podman-usbip/pkg/device"
 )
 
 // Error codes from libusb
@@ -123,6 +125,16 @@ func (c *Context) Exit() {
 	if c.ctx != nil {
 		C.libusb_exit(c.ctx)
 		c.ctx = nil
+	}
+}
+
+// ExitGlobal deinitializes the global libusb context
+func ExitGlobal() {
+	if context != nil {
+		context.Exit()
+		context = nil
+		// Reset once so Init can be called again
+		once = sync.Once{}
 	}
 }
 
@@ -261,4 +273,103 @@ func (d *Device) Unref() {
 // ErrorString returns a string representation of an error code
 func ErrorString(code int) string {
 	return C.GoString(C.libusb_error_name(C.int(code)))
+}
+
+// DeviceHandle wraps libusb_device_handle
+type DeviceHandle struct {
+	handle *C.libusb_device_handle
+	dev    *C.libusb_device
+}
+
+// openDevice implements the platform-specific device opening
+func openDevice(dev *device.Device) (USBDeviceHandle, error) {
+	ctx, err := Init()
+	if err != nil {
+		return nil, err
+	}
+
+	// Find the device by bus number and device address
+	devices, err := ctx.GetDeviceList()
+	if err != nil {
+		return nil, err
+	}
+
+	var targetDev *Device
+	for _, d := range devices {
+		busNum := d.GetBusNumber()
+		devAddr := d.GetDeviceAddress()
+		if uint32(busNum) == dev.BusNum && uint32(devAddr) == dev.DevNum {
+			targetDev = d
+			break
+		}
+		d.Unref()
+	}
+
+	if targetDev == nil {
+		return nil, fmt.Errorf("device not found: bus=%d, dev=%d", dev.BusNum, dev.DevNum)
+	}
+
+	// Open the device
+	var handle *C.libusb_device_handle
+	ret := C.libusb_open(targetDev.dev, &handle)
+	if ret < 0 {
+		targetDev.Unref()
+		return nil, fmt.Errorf("libusb_open failed: %d (%s)", ret, ErrorString(int(ret)))
+	}
+
+	// Claim interface 0
+	ret = C.libusb_claim_interface(handle, 0)
+	if ret < 0 {
+		C.libusb_close(handle)
+		targetDev.Unref()
+		return nil, fmt.Errorf("libusb_claim_interface failed: %d (%s)", ret, ErrorString(int(ret)))
+	}
+
+	return &DeviceHandle{
+		handle: handle,
+		dev:    targetDev.dev,
+	}, nil
+}
+
+// SubmitInTransfer performs an IN transfer from the device.
+func (h *DeviceHandle) SubmitInTransfer(endpoint uint8, buffer []byte, timeout int) (uint32, int32) {
+	actual := C.int(0)
+	ret := C.libusb_bulk_transfer(
+		h.handle,
+		C.uchar(endpoint|0x80), // IN endpoint
+		(*C.uchar)(&buffer[0]),
+		C.int(len(buffer)),
+		&actual,
+		C.uint(timeout),
+	)
+	if ret < 0 {
+		return 0, int32(ret)
+	}
+	return uint32(actual), 0
+}
+
+// SubmitOutTransfer performs an OUT transfer to the device.
+func (h *DeviceHandle) SubmitOutTransfer(endpoint uint8, data []byte, timeout int) (uint32, int32) {
+	actual := C.int(0)
+	ret := C.libusb_bulk_transfer(
+		h.handle,
+		C.uchar(endpoint), // OUT endpoint
+		(*C.uchar)(&data[0]),
+		C.int(len(data)),
+		&actual,
+		C.uint(timeout),
+	)
+	if ret < 0 {
+		return 0, int32(ret)
+	}
+	return uint32(actual), 0
+}
+
+// Close closes the device handle.
+func (h *DeviceHandle) Close() {
+	if h.handle != nil {
+		C.libusb_release_interface(h.handle, 0)
+		C.libusb_close(h.handle)
+		h.handle = nil
+	}
 }
